@@ -8,6 +8,8 @@
 #define KEY_COLOR_G     "g"
 #define KEY_COLOR_B     "b"
 
+#define KEY_CUSTOM_SYSTEM_COLOR     "customSystemColor"
+
 static Rgb8 parseColor(const JsonObjectConst& json, const Rgb8& defaultColor)
 {
     if (json.isNull())
@@ -57,11 +59,19 @@ void DsBiosTheme::LoadRomBrowserResources(
     if (deserializeJson(json, fileDataPtr, fileSize) != DeserializationError::Ok)
         return;
 
+    const JsonObjectConst customColorJson = json[KEY_CUSTOM_SYSTEM_COLOR];
+    _hasCustomSystemColor = !customColorJson.isNull();
+    _customSystemColor = parseColor(
+        customColorJson,
+        Rgb8(96, 128, 152)
+    );        
 }
 
 std::unique_ptr<IThemeBackground> DsBiosTheme::CreateRomBrowserTopBackground() const
 {
-    return std::make_unique<DsBiosSubBackground>(
+    return std::make_unique<DsBiosSubBackground>(        
+        _hasCustomSystemColor,
+        _customSystemColor,
         GetFontRepository()
     );
 }

@@ -16,5 +16,6 @@ public:
     std::unique_ptr<IThemeBackground> CreateRomBrowserTopBackground() const override;
 
 private:
-
+    bool _hasCustomSystemColor = false;
+    Rgb8 _customSystemColor = Rgb8(255, 0, 0);
 };
