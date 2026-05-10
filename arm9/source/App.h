@@ -3,6 +3,7 @@
 #include <memory>
 #include "services/settings/IAppSettingsService.h"
 #include "bgm/IBgmService.h"
+#include "sfx/ISoundEffectService.h"
 #include "services/process/IProcess.h"
 #include "gui/SimplePaletteManager.h"
 #include "gui/AdvancedPaletteManager.h"
@@ -34,7 +35,7 @@
 class alignas(32) App : public IProcess
 {
 public:
-    App(IAppSettingsService& appSettingsService, IBgmService& bgmService);
+    App(IAppSettingsService& appSettingsService, IBgmService& bgmService, ISoundEffectService& soundEffectService);
 
     void Run() override;
     void Exit() override;
@@ -74,7 +75,16 @@ private:
 
     IAppSettingsService& _appSettingsService;
     IBgmService& _bgmService;
+    ISoundEffectService& _soundEffectService;
+
     volatile bool _exit = false;
+
+    int _chimeRestartBgmFrames = 0;
+    bool _chimeInitialized = false;
+    int _lastChimeHour = -1;
+    int _lastChimeMinute = -1;
+    int _lastSecond = -1;
+    bool _soundEffectsLoaded = false;
 
     PadInputSource _keyInputSource;
     TouchInputSource _touchInputSource;
@@ -122,6 +132,8 @@ private:
     void HandleChangeDisplayModeTrigger(RomBrowserState newState);
 
     bool IsRomBrowserVisible() const;
+   
+    void UpdateClockSounds();
 
     void MainLoop();
     void Update();

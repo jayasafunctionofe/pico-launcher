@@ -4,6 +4,8 @@
 #include "bgm/AudioStreamPlayer.h"
 #include "bgm/IBgmService.h"
 #include "bgm/BgmService.h"
+#include "sfx/ISoundEffectService.h"
+#include "sfx/PcmSoundEffectService.h"
 #include "App.h"
 #include "PicoLoaderProcess.h"
 #include "ProcessFactory.h"
@@ -27,6 +29,7 @@ static auto diConfig = [] { return di::make_injector<injected_and_bound>(
     di::bind<RandomGenerator>().to((RandomGenerator&)*gRandomGenerator),
     di::bind<IAudioStreamPlayer>().to<AudioStreamPlayer>(),
     di::bind<IBgmService>().in(di::singleton).to<BgmService>(),
+    di::bind<ISoundEffectService>().in(di::singleton).to<PcmSoundEffectService>(),
     di::bind<>().to((const char*)"/_pico/settings.json"),
     di::bind<IAppSettingsService>().in(di::singleton).to<JsonAppSettingsService>()
 ); };

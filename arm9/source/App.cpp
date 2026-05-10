@@ -1,5 +1,6 @@
 #include "common.h"
 #include <algorithm>
+#include <ctime>
 #include <libtwl/mem/memVram.h>
 #include <libtwl/gfx/gfx.h>
 #include <libtwl/gfx/gfxOam.h>
@@ -24,15 +25,23 @@
 #include "romBrowser/views/DisplaySettingsBottomSheetView.h"
 #include "bgm/AudioStreamPlayer.h"
 #include "bgm/BgmService.h"
+#include "sfx/ISoundEffectService.h"
 #include "themes/ThemeInfoFactory.h"
 #include "themes/ThemeFactory.h"
 #include "gui/Gx.h"
 #include "splashTop.h"
 #include "App.h"
+#include "rtcIpc.h"
 
 #define SPLASH_FRAMES       44
 
-App::App(IAppSettingsService& appSettingsService, IBgmService& bgmService)
+
+static int BcdToInt(u8 value)
+{
+    return ((value >> 4) * 10) + (value & 0x0F);
+}
+
+App::App(IAppSettingsService& appSettingsService, IBgmService& bgmService, ISoundEffectService& soundEffectService)
     : _mainObjPltt(GFX_PLTT_OBJ_MAIN)
     , _mainObjVram(GFX_OBJ_MAIN)
     , _mainObjDialogVram(GFX_OBJ_MAIN, 128 * 1024)
@@ -43,6 +52,7 @@ App::App(IAppSettingsService& appSettingsService, IBgmService& bgmService)
     , _subVramContext(nullptr, &_subObjVram, nullptr, nullptr)
     , _appSettingsService(appSettingsService)
     , _bgmService(bgmService)
+    , _soundEffectService(soundEffectService)
     , _inputProvider(&_keyInputSource, &_touchInputSource)
     , _inputRepeater(&_inputProvider,
         InputKey::DpadLeft | InputKey::DpadRight | InputKey::DpadUp | InputKey::DpadDown | InputKey::L | InputKey::R,
@@ -128,6 +138,12 @@ void App::Run()
     _dialogPresenter.InitVram();
 
     LoadTheme();
+
+    if (!_soundEffectsLoaded)
+    {
+        _soundEffectService.LoadThemeSoundsFromConfig();
+        _soundEffectsLoaded = true;
+    } 
 
     _ioTaskQueue.StartThread(1, _ioTaskThreadStack, sizeof(_ioTaskThreadStack));
     _bgTaskQueue.StartThread(2, _bgTaskThreadStack, sizeof(_bgTaskThreadStack));
@@ -387,6 +403,47 @@ bool App::IsRomBrowserVisible() const
         || curState == RomBrowserState::Launching;
 }
 
+void App::UpdateClockSounds()
+{
+    rtc_datetime_t dateTime;
+    rtc_readDateTime(&dateTime);
+
+    int curHour   = BcdToInt(dateTime.time.hour);
+    int curMinute = BcdToInt(dateTime.time.minute);
+    int curSecond = BcdToInt(dateTime.time.second);
+
+    const bool isHourlyChimeSecond = curMinute == 0 && curSecond == 0;
+
+    if (curSecond != _lastSecond)
+    {
+        _lastSecond = curSecond;
+
+        if (!isHourlyChimeSecond)
+        {
+            _soundEffectService.PlayTick();
+        }
+    }
+
+    if (!_chimeInitialized)
+    {
+        _lastChimeMinute = curMinute;
+        _lastChimeHour = curHour;
+        _chimeInitialized = true;
+        return;
+    }
+
+    if (_lastChimeMinute != curMinute)
+    {
+        _lastChimeMinute = curMinute;
+        _lastChimeHour = curHour;
+
+        if (curMinute == 0)
+        {
+            _soundEffectService.PlayHourlyChime();
+        }
+    }
+}
+
 void App::Update()
 {
     const auto& stateMachine = _romBrowserController.GetStateMachine();
@@ -422,6 +479,8 @@ void App::Update()
         _romBrowserController.GetRomBrowserViewModel()->SetIconFrameCounter(
             _romBrowserController.GetRomBrowserViewModel()->GetIconFrameCounter() + 1);
     }
+
+    UpdateClockSounds();
 }
 
 void App::Draw()
