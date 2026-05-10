@@ -3,6 +3,7 @@
 #include "../IFontRepository.h"
 
 #include <memory>
+#include <ctime>
 #include "DsBiosSystemInfo.h"
 #include "DsColorUtils.h"
 #include <nds/system.h>
@@ -44,6 +45,12 @@ private:
     // RAM copy of the unmodified background for region restoration
     std::unique_ptr<u16[]> _bgBuffer; // 256 * 192 u16s = 98 304 bytes
     
+    // clock
+    struct tm _tm {};
+    int _prevSecond = -1;
+    int _frameCounter = 0;
+    bool _prevColonVisible = false;
+
     // topbar
     static constexpr int TB_TEXT_Y_POS = 3;
     static constexpr int TB_USER_X_POS = 8;
@@ -77,6 +84,8 @@ private:
     void DrawTopBarBackground();
     void DrawTopBarDividers();
     void DrawTopBarUserName(const std::string& userName);
+    void DrawDigitalClock(int hour, int minute);
+    void DrawTopBarDate(int month, int day);
 
 
 };

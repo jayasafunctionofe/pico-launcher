@@ -9,7 +9,7 @@
 #include "DsFont.h"
 #include "DsIcons.h"
 
-
+#include "../../rtcIpc.h"
 
 
 // ########## BITMAP HELPERS ##########
@@ -36,6 +36,13 @@ void DsBiosSubBackground::RestoreBgRegion(int x, int y, int w, int h)
             vram[row * 256 + col] = _bgBuffer[row * 256 + col];
         }
     }
+}
+
+// ########## Time Converstion ########## //
+
+static int BcdToInt(u8 value)
+{
+    return ((value >> 4) * 10) + (value & 0x0F);
 }
 
 // ########## VBLANK ##########
@@ -72,6 +79,8 @@ void DsBiosSubBackground::LoadResources(const ITheme& theme, const VramContext& 
     DC_FlushRange(_bgBuffer.get(), 256 * 192 * sizeof(u16));
     dmaCopyWords(3, _bgBuffer.get(), (void*)BmpVram(), 256 * 192 * sizeof(u16));
 
+    _prevSecond = -1;
+
     DsBiosSystemInfo systemInfo;
     _systemSettings = systemInfo.ReadSettings();
 
@@ -85,21 +94,60 @@ void DsBiosSubBackground::LoadResources(const ITheme& theme, const VramContext& 
         _palette = MakeUiPalette(THEME_USER_PALETTES[themeId]);
     }
 
-    DrawTopBar();
+    DrawTopBarBackground();
+    DrawTopBarDividers();
 }
 
 // ########## UPDATE ##########
 void DsBiosSubBackground::Update()
 {
+    _frameCounter++;
 
+    rtc_datetime_t dateTime;
+    rtc_readDateTime(&dateTime);
+
+    _tm.tm_sec  = BcdToInt(dateTime.time.second);
+    _tm.tm_min  = BcdToInt(dateTime.time.minute);
+    _tm.tm_hour = BcdToInt(dateTime.time.hour);
+
+    _tm.tm_mday = BcdToInt(dateTime.date.monthDay);
+    _tm.tm_mon  = BcdToInt(dateTime.date.month) - 1;
+
+    int year = BcdToInt(dateTime.date.year);
+    _tm.tm_year = year + 100; // 2000-based RTC year -> tm years since 1900
+
+    _tm.tm_isdst = -1;
+    
+    mktime(&_tm); 
 }
 
 // ########## DRAW ##########
 void DsBiosSubBackground::Draw(GraphicsContext& graphicsContext)
 {
-    RestoreBgRegion(143, 0, 113, 16);
+    const int sec   = _tm.tm_sec;
+    const int min   = _tm.tm_min;
+    const int hrs   = _tm.tm_hour;
+    const int day   = _tm.tm_mday;
+    const int month = _tm.tm_mon + 1;
+    const int year  = _tm.tm_year + 1900;
 
-    DrawTopBar();
+    const bool colonVisible = ((_frameCounter / 30) & 1) == 0;
+
+    const bool secondChanged = (sec != _prevSecond);
+    const bool colonChanged  = (colonVisible != _prevColonVisible);
+
+    if (secondChanged || colonChanged)
+    {
+        RestoreBgRegion(143, 0, 113, 16);
+        DrawTopBarBackground();
+        DrawTopBarDividers();
+        DrawTopBarUserName(_systemSettings.userName);
+        DrawDigitalClock(hrs, min);
+        DrawTopBarDate(month, day);
+    }
+
+    _prevSecond = sec;
+    _prevColonVisible = colonVisible;
 }
 
 
@@ -219,14 +267,6 @@ static void DrawTextBig(
 
 // ########## TOP  BAR ##########
 
-void DsBiosSubBackground::DrawTopBar()
-{
-    DrawTopBarBackground();
-    DrawTopBarDividers();
-    DrawTopBarUserName(_systemSettings.userName);
-}
-
-
 void DsBiosSubBackground::DrawTopBarBackground()
 {
     static constexpr int W = 256;
@@ -282,4 +322,45 @@ void DsBiosSubBackground::DrawTopBarUserName(const std::string& userName)
     u16 color = _palette.white;
 
     DrawText(x, y, userName.c_str(), color, this);
+}
+
+void DsBiosSubBackground::DrawDigitalClock(int hour, int minute)
+{
+    constexpr int x = TB_CLOCK_X_POS;
+    constexpr int y = TB_TEXT_Y_POS;
+
+    u16 color = _palette.white;
+
+    const bool showColon = ((_frameCounter / 30) & 1) == 0;
+
+    char text[6];
+
+    snprintf(
+        text,
+        sizeof(text),
+        "%02d%c%02d",
+        hour,
+        showColon ? ':' : ' ',
+        minute);
+
+    DrawText(x, y, text, color, this);
+}
+
+void DsBiosSubBackground::DrawTopBarDate(int month, int day)
+{
+    constexpr int x = TB_DATE_X_POS;
+    constexpr int y = TB_TEXT_Y_POS;
+
+    u16 color = _palette.white;
+
+    char text[6];
+
+    snprintf(
+        text,
+        sizeof(text),
+        "%02d/%02d",
+        month,
+        day);
+
+    DrawText(x, y, text, color, this);
 }
