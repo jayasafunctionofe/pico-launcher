@@ -51,16 +51,29 @@ private:
     int _frameCounter = 0;
     bool _prevColonVisible = false;
 
+    // battery stuff
+    bool _batteryLow = false;
+    bool _prevBatteryLow = false;
+    bool _prevBatteryVisible = true;
+
+    u16 _dsBattLevel = BATTERY_LEVEL_DS_HIGH;
+
+
     // topbar
     static constexpr int TB_TEXT_Y_POS = 3;
     static constexpr int TB_GBA_Y_POS = 2;
     static constexpr int TB_MODE_Y_POS = 2;
+    static constexpr int TB_BATT_DS_Y_POS = 4;
+    static constexpr int TB_BATT_DSI_Y_POS = 3;
 
     static constexpr int TB_USER_X_POS = 8;
     static constexpr int TB_CLOCK_X_POS = 148;
     static constexpr int TB_DATE_X_POS = 178;
     static constexpr int TB_GBA_X_POS = 210;
     static constexpr int TB_MODE_X_POS = 226;
+    static constexpr int TB_BATT_DS_X_POS = 242;
+    static constexpr int TB_BATT_DSI_X_POS = 242;
+
 
     // analogue clock
     static constexpr int CLOCK_CX     = 63;
@@ -93,5 +106,7 @@ private:
     void DrawTopBarDate(int month, int day);
     void DrawTopBarGbaIcon(bool gbaScreen);
     void DrawTopBarAutoMode(bool autoMode);
+    void DrawTopBarBatteryIconDsi(u16 batteryState);
+    void DrawTopBarBatteryIcon(bool lowBattery);
 
 };

@@ -27,6 +27,7 @@
 #include "ipcServices/DldiIpcService.h"
 #include "ipcServices/SoundIpcService.h"
 #include "ipcServices/RtcIpcService.h"
+#include "ipcServices/BatteryIpcService.h"  
 #include "ExitMode.h"
 #include "Arm7State.h"
 #include "mmc/tmio.h"
@@ -40,6 +41,10 @@ static DsiSdIpcService sDsiSdIpcService;
 static DldiIpcService sDldiIpcService;
 static SoundIpcService sSoundIpcService;
 static RtcIpcService sRtcIpcService;
+static BatteryIpcService sBatteryIpcService;
+
+static volatile bool sBatteryLow = false;
+static int sBatteryPollCounter = 0;
 
 ILogger* gLogger = &sThreadSafeLogger;
 
@@ -120,6 +125,8 @@ static void initializeArm7()
     pmic_setAmplifierEnable(true);
     sys_setSoundPower(true);
 
+    sBatteryIpcService.Start();
+
     readUserSettings();
     pmic_setPowerLedBlink(PMIC_CONTROL_POWER_LED_BLINK_NONE);
 
@@ -157,6 +164,9 @@ static void initializeArm7()
 
 static void updateArm7IdleState()
 {
+
+    sBatteryIpcService.Update();
+
     if (pload_shouldStart())
     {
         sExitMode = ExitMode::PicoLoader;

@@ -10,6 +10,7 @@
 #include "DsIcons.h"
 
 #include "../../rtcIpc.h"
+#include "sharedMemory.h"
 
 
 // ########## BITMAP HELPERS ##########
@@ -94,6 +95,18 @@ void DsBiosSubBackground::LoadResources(const ITheme& theme, const VramContext& 
         _palette = MakeUiPalette(THEME_USER_PALETTES[themeId]);
     }
 
+    _prevBatteryVisible = true;
+    _batteryLow = (_dsBattLevel <= 3);
+
+    if (isDSiMode())
+    {
+        DrawTopBarBatteryIconDsi(SHARED_BATTERY_STATE);
+    }
+    else
+    {
+        DrawTopBarBatteryIcon(_batteryLow);
+    }
+
 }
 
 // ########## UPDATE ##########
@@ -117,6 +130,13 @@ void DsBiosSubBackground::Update()
     _tm.tm_isdst = -1;
     
     mktime(&_tm); 
+
+    // Read battery once every ~5 seconds at 60 FPS
+    if ((_frameCounter % 600) == 0)
+    {  
+        _dsBattLevel = SHARED_BATTERY_STATE & BATTERY_LEVEL_MASK;
+        _batteryLow = (_dsBattLevel == BATTERY_LEVEL_DS_LOW);
+    }
 }
 
 // ########## DRAW ##########
@@ -134,6 +154,9 @@ void DsBiosSubBackground::Draw(GraphicsContext& graphicsContext)
     const bool secondChanged = (sec != _prevSecond);
     const bool colonChanged  = (colonVisible != _prevColonVisible);
 
+    const bool batteryVisible = !_batteryLow || (((_frameCounter / 30) & 1) == 0);
+    const bool batteryChanged = (batteryVisible != _prevBatteryVisible);
+
     if (secondChanged || colonChanged)
     {
         RestoreBgRegion(143, 0, 113, 16);
@@ -144,10 +167,21 @@ void DsBiosSubBackground::Draw(GraphicsContext& graphicsContext)
         DrawTopBarDate(month, day);
         DrawTopBarGbaIcon(_systemSettings.gbaScreen);
         DrawTopBarAutoMode(_systemSettings.autoMode);
+
+        if (isDSiMode())
+        {
+            DrawTopBarBatteryIconDsi(SHARED_BATTERY_STATE);
+        }
+        else
+        {
+            DrawTopBarBatteryIcon(_batteryLow);
+        }
     }
 
     _prevSecond = sec;
     _prevColonVisible = colonVisible;
+    _prevBatteryVisible = batteryVisible;
+    
 }
 
 
@@ -440,4 +474,182 @@ void DsBiosSubBackground::DrawTopBarAutoMode(bool autoMode)
         modeIcon,
         MODE_ICON_W, MODE_ICON_H,
         PALETTE_MODE);
+}
+
+enum class BatteryDrawState
+{
+    Percent1,
+    Percent25,
+    Percent50,
+    Percent75,
+    Percent100,
+    Charging
+};
+
+BatteryDrawState ParseBatteryState(u16 batteryState)
+{
+    const bool charging =
+        (batteryState & BATTERY_CHARGER_CONNECTED) != 0;
+
+    if (charging)
+        return BatteryDrawState::Charging;
+
+    const u16 level = batteryState & BATTERY_LEVEL_MASK;
+
+    if (level <= 1)
+        return BatteryDrawState::Percent1;
+    if (level <= 3)
+        return BatteryDrawState::Percent25;
+    if (level <= 7)
+        return BatteryDrawState::Percent50;
+    if (level <= 11)
+        return BatteryDrawState::Percent75;
+
+    return BatteryDrawState::Percent100;
+}
+
+void DsBiosSubBackground::DrawTopBarBatteryIconDsi(u16 batteryState)
+{
+    constexpr int x = TB_BATT_DS_X_POS;
+    constexpr int y = TB_BATT_DS_Y_POS;
+    
+    const BatteryDrawState state = ParseBatteryState(batteryState);
+
+    const bool chargeBlinkVisible = ((_frameCounter / 30) & 1) == 0;
+    const bool lowBlinkVisible = ((_frameCounter / 30) & 1) == 0;
+
+    const u16 PALETTE_BATTERY_DSI_BACK[4] =
+    {
+        0,
+        _palette.black,
+        _palette.lightGray,
+        _palette.black,
+    };
+
+    const u16 PALETTE_BATTERY_DSI_RED[4] =
+    {
+        0,
+        _palette.batteryDsiRed,
+        _palette.batteryDsiLightRed,
+        _palette.batteryDsiDarkRed,
+    };
+
+    const u16 PALETTE_BATTERY_DSI_BLUE[4] =
+    {
+        0,
+        _palette.batteryDsiBlue,
+        _palette.batteryDsiLightBlue,
+        _palette.batteryDsiDarkBlue,
+    };
+
+    const u16 PALETTE_BATTERY_DSI_ORANGE[4] =
+    {
+        0,
+        _palette.batteryDsiOrange,
+        _palette.batteryDsiLightOrange,
+        _palette.batteryDsiDarkOrange,
+    };
+
+    switch (state)
+    {
+        case BatteryDrawState::Percent1:
+            if (chargeBlinkVisible)
+            {  
+                DrawIndexedIcon(x, y, sBatteryIconDsiBack, BATT_ICON_DSI_W, BATT_ICON_DSI_H, 
+                    PALETTE_BATTERY_DSI_BACK);
+
+                DrawIndexedIcon(x, y, sBatteryIconDsi25, BATT_ICON_DSI_W, BATT_ICON_DSI_H,
+                    PALETTE_BATTERY_DSI_RED);
+            }    
+            break;
+
+        case BatteryDrawState::Percent25:
+            DrawIndexedIcon(x, y, sBatteryIconDsiBack, BATT_ICON_DSI_W, BATT_ICON_DSI_H, 
+                PALETTE_BATTERY_DSI_BACK);
+
+            DrawIndexedIcon(x, y, sBatteryIconDsi25, BATT_ICON_DSI_W, BATT_ICON_DSI_H,
+                PALETTE_BATTERY_DSI_RED);
+            
+            break;
+
+        case BatteryDrawState::Percent50:
+            DrawIndexedIcon(x, y, sBatteryIconDsiBack, BATT_ICON_DSI_W, BATT_ICON_DSI_H, 
+                PALETTE_BATTERY_DSI_BACK);
+
+            DrawIndexedIcon(x, y, sBatteryIconDsi50, BATT_ICON_DSI_W, BATT_ICON_DSI_H,
+                PALETTE_BATTERY_DSI_BLUE);
+            
+            break;
+
+        case BatteryDrawState::Percent75:
+            DrawIndexedIcon(x, y, sBatteryIconDsiBack, BATT_ICON_DSI_W, BATT_ICON_DSI_H, 
+                PALETTE_BATTERY_DSI_BACK);
+
+            DrawIndexedIcon(x, y, sBatteryIconDsi75, BATT_ICON_DSI_W, BATT_ICON_DSI_H,
+                PALETTE_BATTERY_DSI_BLUE);
+            
+            break;
+
+        case BatteryDrawState::Percent100:
+            DrawIndexedIcon(x, y, sBatteryIconDsiBack, BATT_ICON_DSI_W, BATT_ICON_DSI_H, 
+                PALETTE_BATTERY_DSI_BACK);
+
+            DrawIndexedIcon(x, y, sBatteryIconDsi100, BATT_ICON_DSI_W, BATT_ICON_DSI_H,
+                PALETTE_BATTERY_DSI_BLUE);
+            
+            break;
+
+        case BatteryDrawState::Charging:            
+            DrawIndexedIcon(x, y, sBatteryIconDsiBack, BATT_ICON_DSI_W, BATT_ICON_DSI_H, 
+                PALETTE_BATTERY_DSI_BACK);
+
+            DrawIndexedIcon(x, y, sBatteryIconDsi100, BATT_ICON_DSI_W, BATT_ICON_DSI_H,
+                PALETTE_BATTERY_DSI_ORANGE);
+            
+                if (chargeBlinkVisible)
+                {  
+                    DrawIndexedIcon(x, y, sBatteryIconDsiPlug, BATT_ICON_DSI_W, BATT_ICON_DSI_H, 
+                                PALETTE_BATTERY_DSI_BACK);
+                }
+            break;
+    }
+}
+
+
+void DsBiosSubBackground::DrawTopBarBatteryIcon(bool lowBattery)
+{
+    constexpr int x = TB_BATT_DS_X_POS;
+    constexpr int y = TB_BATT_DS_Y_POS;
+
+    const u16 PALETTE_BATTERY_GOOD[4] =
+    {
+        0,
+        _palette.black,
+        _palette.batteryDarkGreen,
+        _palette.batteryGreen,
+    };
+
+    const u16 PALETTE_BATTERY_LOW[4] =
+    {
+        0,
+        _palette.black,
+        _palette.batteryDarkRed,
+        _palette.batteryRed,
+    };
+
+    const bool lowBlinkVisible = ((_frameCounter / 30) & 1) == 0;
+
+
+    if (lowBattery)
+    {
+        if (!lowBlinkVisible)
+            return; // skip drawing = invisible frame
+    }
+
+    DrawIndexedIcon(
+        x, y,
+        sBatteryIcon,
+        BATT_ICON_W, BATT_ICON_H,
+        lowBattery ? PALETTE_BATTERY_LOW : PALETTE_BATTERY_GOOD);
+
 }
