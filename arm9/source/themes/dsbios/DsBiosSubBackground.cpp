@@ -94,8 +94,6 @@ void DsBiosSubBackground::LoadResources(const ITheme& theme, const VramContext& 
         _palette = MakeUiPalette(THEME_USER_PALETTES[themeId]);
     }
 
-    DrawTopBarBackground();
-    DrawTopBarDividers();
 }
 
 // ########## UPDATE ##########
@@ -144,6 +142,8 @@ void DsBiosSubBackground::Draw(GraphicsContext& graphicsContext)
         DrawTopBarUserName(_systemSettings.userName);
         DrawDigitalClock(hrs, min);
         DrawTopBarDate(month, day);
+        DrawTopBarGbaIcon(_systemSettings.gbaScreen);
+        DrawTopBarAutoMode(_systemSettings.autoMode);
     }
 
     _prevSecond = sec;
@@ -153,6 +153,24 @@ void DsBiosSubBackground::Draw(GraphicsContext& graphicsContext)
 
 
 // ########## Draw Methods ########## //
+
+void DsBiosSubBackground::DrawIndexedIcon(
+    int x, int y,
+    const u8* icon,
+    int w, int h,
+    const u16 palette[4])
+{
+    for (int py = 0; py < h; py++)
+    {
+        for (int px = 0; px < w; px++)
+        {
+            const u8 index = icon[py * w + px];
+
+            if (index != 0)
+                DrawBmpPixel(x + px, y + py, palette[index]);
+        }
+    }
+}
 
 void DsBiosSubBackground::DrawBmpPixel(int px, int py, u16 color)
 {
@@ -265,6 +283,8 @@ static void DrawTextBig(
     }
 }
 
+
+
 // ########## TOP  BAR ##########
 
 void DsBiosSubBackground::DrawTopBarBackground()
@@ -363,4 +383,61 @@ void DsBiosSubBackground::DrawTopBarDate(int month, int day)
         day);
 
     DrawText(x, y, text, color, this);
+}
+
+void DsBiosSubBackground::DrawTopBarGbaIcon(bool gbaScreen)
+{
+    constexpr int x = TB_GBA_X_POS;
+    constexpr int y = TB_GBA_Y_POS;
+
+    const u16 PALETTE_GBA[4] =
+    {
+        0,
+        _palette.black,
+        _palette.lightGray,
+        _palette.mediumGray,
+    };
+
+    const u16 PALETTE_GBA_SCREEN[4] =
+    {
+        0,
+        _palette.gbaOrange,
+
+    };
+
+    DrawIndexedIcon(
+        x, y,
+        sGbaIcon,
+        GBA_ICON_W, GBA_ICON_H,
+        PALETTE_GBA);
+    if (gbaScreen) // if true, bottom screen
+    {
+        DrawIndexedIcon(x, y, sGbaOverlayBottom, GBA_ICON_W, GBA_ICON_H, PALETTE_GBA_SCREEN);
+    }
+    else
+    {
+        DrawIndexedIcon(x, y, sGbaOverlayTop, GBA_ICON_W, GBA_ICON_H, PALETTE_GBA_SCREEN);
+    }
+}
+
+void DsBiosSubBackground::DrawTopBarAutoMode(bool autoMode)
+{
+    constexpr int x = TB_MODE_X_POS;
+    constexpr int y = TB_MODE_Y_POS;
+
+    const u8* modeIcon = autoMode ? sModeAutoIcon : sModeManualIcon;
+
+    const u16 PALETTE_MODE[4] =
+    {
+        0,
+        _palette.black,
+        _palette.darkGray,
+        _palette.white,
+    };
+
+    DrawIndexedIcon(
+        x, y,
+        modeIcon,
+        MODE_ICON_W, MODE_ICON_H,
+        PALETTE_MODE);
 }

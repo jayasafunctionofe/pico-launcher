@@ -53,9 +53,14 @@ private:
 
     // topbar
     static constexpr int TB_TEXT_Y_POS = 3;
+    static constexpr int TB_GBA_Y_POS = 2;
+    static constexpr int TB_MODE_Y_POS = 2;
+
     static constexpr int TB_USER_X_POS = 8;
     static constexpr int TB_CLOCK_X_POS = 148;
     static constexpr int TB_DATE_X_POS = 178;
+    static constexpr int TB_GBA_X_POS = 210;
+    static constexpr int TB_MODE_X_POS = 226;
 
     // analogue clock
     static constexpr int CLOCK_CX     = 63;
@@ -86,6 +91,7 @@ private:
     void DrawTopBarUserName(const std::string& userName);
     void DrawDigitalClock(int hour, int minute);
     void DrawTopBarDate(int month, int day);
-
+    void DrawTopBarGbaIcon(bool gbaScreen);
+    void DrawTopBarAutoMode(bool autoMode);
 
 };
