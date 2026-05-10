@@ -50,6 +50,7 @@ private:
     int _prevSecond = -1;
     int _frameCounter = 0;
     bool _prevColonVisible = false;
+    int _prevDay    = -1;
 
     // battery stuff
     bool _batteryLow = false;
@@ -96,7 +97,9 @@ private:
     vu16* BmpVram() const;
     void RestoreBgRegion(int x, int y, int w, int h);
     void DrawIndexedIcon(int x, int y, const u8* icon, int w, int h, const u16 palette[4]);
-
+    bool DrawBinImage(File& file, int x, int y, int width, int height, bool useTransparency);
+    void DrawBgBufferPixel(int px, int py, u16 color);
+    
     // Top Bar stuff
     void DrawTopBar();
     void DrawTopBarBackground();
@@ -109,4 +112,15 @@ private:
     void DrawTopBarBatteryIconDsi(u16 batteryState);
     void DrawTopBarBatteryIcon(bool lowBattery);
 
+    // Analogue Clock 
+    void DrawDebugNumber(int x, int y, long value, u16 color);
+    void DrawHand(int x0, int y0, int x1, int y1, u16 color, int thickness);
+    void DrawClockHands(int h, int m, int s, int alarmHour, int alarmMinute);
+
+    // Calendar 
+    void DrawBox(int x, int y, int w, int h, u16 borderA, u16 borderB, u16 fillColor);
+    void DrawCalendarHeader(int month, int year); 
+    void DrawCalendarNumber(int cellX, int cellY, int number, u16 color);
+    void DrawCalendar(int year, int month, int today);
+    static int DaysInMonth(int y, int m);
 };

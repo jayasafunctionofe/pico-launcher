@@ -77,6 +77,28 @@ void DsBiosSubBackground::LoadResources(const ITheme& theme, const VramContext& 
         file->Close();
     }
     
+    // clock back - 14, 46  101 x 102
+    const auto clockFile = std::make_unique<File>();
+    if (theme.OpenThemeFile(*clockFile, "dsbios_clock.bin"))
+    {
+        DrawBinImage(*clockFile, 13, 45, 101, 101, true);
+        clockFile->Close();
+    }
+    // calendar back -  125, 32  117 x 115
+    const auto calFile = std::make_unique<File>();
+    if (theme.OpenThemeFile(*calFile, "dsbios_calendar.bin"))
+    {
+        DrawBinImage(*calFile, 125, 31, 117, 115, true);
+        calFile->Close();
+    }
+    // flyout back  0,146   256 x 47
+    const auto flyoutFile = std::make_unique<File>();
+    if (theme.OpenThemeFile(*flyoutFile, "dsbios_flyout.bin"))
+    {
+        DrawBinImage(*flyoutFile, 0, 146, 256, 47, true);
+        flyoutFile->Close();
+    }
+
     DC_FlushRange(_bgBuffer.get(), 256 * 192 * sizeof(u16));
     dmaCopyWords(3, _bgBuffer.get(), (void*)BmpVram(), 256 * 192 * sizeof(u16));
 
@@ -153,6 +175,7 @@ void DsBiosSubBackground::Draw(GraphicsContext& graphicsContext)
 
     const bool secondChanged = (sec != _prevSecond);
     const bool colonChanged  = (colonVisible != _prevColonVisible);
+    const bool dayChanged    = (day != _prevDay);
 
     const bool batteryVisible = !_batteryLow || (((_frameCounter / 30) & 1) == 0);
     const bool batteryChanged = (batteryVisible != _prevBatteryVisible);
@@ -178,6 +201,28 @@ void DsBiosSubBackground::Draw(GraphicsContext& graphicsContext)
         }
     }
 
+    if (secondChanged)
+    {
+        RestoreBgRegion(
+            CLOCK_CX - CLOCK_RESTORE_R,
+            CLOCK_CY - CLOCK_RESTORE_R,
+            CLOCK_RESTORE_R * 2 + 1,
+            CLOCK_RESTORE_R * 2 + 1);
+
+        DrawClockHands(hrs, min, sec, _systemSettings.alarmHour, _systemSettings.alarmMinute);
+    }
+
+    if (dayChanged)
+    {
+        RestoreBgRegion(
+            CAL_ORIGIN_X, CAL_ORIGIN_Y,
+            CAL_CELL_W * 7,
+            CAL_CELL_H * 6);
+
+        DrawCalendar(year, month, day);
+    }
+
+    _prevDay = day;
     _prevSecond = sec;
     _prevColonVisible = colonVisible;
     _prevBatteryVisible = batteryVisible;
@@ -187,6 +232,63 @@ void DsBiosSubBackground::Draw(GraphicsContext& graphicsContext)
 
 
 // ########## Draw Methods ########## //
+
+void DsBiosSubBackground::DrawBgBufferPixel(int px, int py, u16 color)
+{
+    if (px < 0 || px >= 256 || py < 0 || py >= 192)
+        return;
+
+    if (!_bgBuffer)
+        return;
+
+    _bgBuffer[py * 256 + px] = color;
+}
+
+bool DsBiosSubBackground::DrawBinImage(
+    File& file,
+    int x,
+    int y,
+    int width,
+    int height,
+    bool useTransparency
+)
+{
+    const u32 pixelCount = width * height;
+    const u32 byteCount = pixelCount * sizeof(u16);
+
+    auto pixels = std::unique_ptr<u16[]>(new(cache_align) u16[pixelCount]);
+
+    u32 bytesRead = 0;
+    file.Read(pixels.get(), byteCount, bytesRead);
+
+    if (bytesRead != byteCount)
+        return false;
+
+    for (int py = 0; py < height; py++)
+    {
+        const int dstY = y + py;
+
+        if (dstY < 0 || dstY >= 192)
+            continue;
+
+        for (int px = 0; px < width; px++)
+        {
+            const int dstX = x + px;
+
+            if (dstX < 0 || dstX >= 256)
+                continue;
+
+            const u16 color = pixels[py * width + px];
+
+            if (useTransparency && color == 0)
+                continue;
+
+            DrawBgBufferPixel(dstX, dstY, color);
+        }
+    }
+
+    return true;
+}
 
 void DsBiosSubBackground::DrawIndexedIcon(
     int x, int y,
@@ -652,4 +754,245 @@ void DsBiosSubBackground::DrawTopBarBatteryIcon(bool lowBattery)
         BATT_ICON_W, BATT_ICON_H,
         lowBattery ? PALETTE_BATTERY_LOW : PALETTE_BATTERY_GOOD);
 
+}
+
+// ########## ANALOG CLOCK ##########
+
+void DsBiosSubBackground::DrawHand(int x0, int y0, int x1, int y1, u16 color, int thickness)
+{
+    int half = thickness / 2;
+
+    auto DrawBrush = [&](int cx, int cy)
+    {
+        int start = -(thickness / 2);
+        int end   = start + thickness - 1;
+
+        for (int oy = start; oy <= end; oy++)
+        {
+            for (int ox = start; ox <= end; ox++)
+            {
+                DrawBmpPixel(cx + ox, cy + oy, color);
+            }
+        }
+    };
+
+    int dx = abs(x1 - x0), sx = x0 < x1 ? 1 : -1;
+    int dy = -abs(y1 - y0), sy = y0 < y1 ? 1 : -1;
+    int err = dx + dy;
+
+    while (true)
+    {
+        DrawBrush(x0, y0);
+
+        if (x0 == x1 && y0 == y1)
+            break;
+
+        int e2 = 2 * err;
+
+        if (e2 >= dy)
+        {
+            err += dy;
+            x0 += sx;
+        }
+
+        if (e2 <= dx)
+        {
+            err += dx;
+            y0 += sy;
+        }
+    }
+}
+
+void DsBiosSubBackground::DrawClockHands(int h, int m, int s, int alarmHour, int alarmMinute)
+{
+    // alarm
+    float alarmAngle = ((alarmHour % 12) + alarmMinute / 60.0f)
+                        * (M_TWOPI / 12.0f)
+                        - M_PI_2;
+
+    DrawHand(CLOCK_CX, CLOCK_CY,
+        CLOCK_CX + (int)(cosf(alarmAngle) * ALARM_LEN),
+        CLOCK_CY + (int)(sinf(alarmAngle) * ALARM_LEN),
+        _palette.alarmHand,
+        2);
+
+    // hours
+    float hAngle = ((h % 12) + m / 60.0f) * (M_TWOPI / 12.0f) - M_PI_2;
+    DrawHand(CLOCK_CX, CLOCK_CY,
+        CLOCK_CX + (int)(cosf(hAngle) * HOUR_LEN),
+        CLOCK_CY + (int)(sinf(hAngle) * HOUR_LEN),
+        _palette.mediumGray, 2);
+
+    // minutes
+    float mAngle = (m + s / 60.0f) * (M_TWOPI / 60.0f) - M_PI_2;
+    DrawHand(CLOCK_CX, CLOCK_CY,
+        CLOCK_CX + (int)(cosf(mAngle) * MIN_LEN),
+        CLOCK_CY + (int)(sinf(mAngle) * MIN_LEN),
+        _palette.mediumGray, 2);
+
+    // seconds
+    float sAngle = s * (M_TWOPI / 60.0f) - M_PI_2;
+    DrawHand(CLOCK_CX, CLOCK_CY,
+        CLOCK_CX + (int)(cosf(sAngle) * SEC_LEN),
+        CLOCK_CY + (int)(sinf(sAngle) * SEC_LEN),
+        _palette.user.base, 2);
+
+    // cap
+    for (int y = -2; y <= 2; y++)
+    {
+        for (int x = -2; x <= 2; x++)
+        {
+            DrawBmpPixel(CLOCK_CX + x, CLOCK_CY + y, _palette.darkGray);
+        }
+    }
+}
+
+// ########## CALENDAR ##########
+
+void DsBiosSubBackground::DrawBox(
+    int x, int y, int w, int h,
+    u16 borderA, u16 borderB, u16 fillColor)
+{
+    for (int py = 0; py < h; py++)
+    {
+        for (int px = 0; px < w; px++)
+        {
+            const bool isBorder =
+                px == 0 || py == 0 || px == w - 1 || py == h - 1;
+
+            if (!isBorder)
+            {
+                DrawBmpPixel(x + px, y + py, fillColor);
+                continue;
+            }
+
+            // ---- Corner check ----
+            const bool isCorner =
+                (px == 0 && py == 0) ||
+                (px == w - 1 && py == 0) ||
+                (px == 0 && py == h - 1) ||
+                (px == w - 1 && py == h - 1);
+
+            if (isCorner)
+            {
+                DrawBmpPixel(x + px, y + py, borderA);
+                continue;
+            }
+
+            // ---- Edge position (offset so corners don't break pattern) ----
+            int t = 0;
+
+            if (py == 0)               t = px - 1;           // top
+            else if (px == w - 1)      t = py - 1;           // right
+            else if (py == h - 1)      t = px - 1;           // bottom
+            else if (px == 0)          t = py - 1;           // left
+
+            u16 color = (t % 2 == 0) ? borderA : borderB;
+
+            DrawBmpPixel(x + px, y + py, color);
+        }
+    }
+}
+
+void DsBiosSubBackground::DrawCalendarHeader(int month, int year){
+    constexpr int x = 157;
+    constexpr int y = 33;
+
+    u16 color = _palette.black;
+
+    char text[9];
+
+    snprintf(
+        text,
+        sizeof(text),
+        "%02d/%04d",
+        month,
+        year);
+
+    DrawTextBig(x, y, text, color, this);
+}
+
+void DsBiosSubBackground::DrawCalendarNumber(
+    int cellX, int cellY, int number, u16 color)
+{
+    char text[3];
+
+    if (number >= 10)
+    {
+        text[0] = '0' + (number / 10);
+        text[1] = '0' + (number % 10);
+        text[2] = '\0';
+    }
+    else
+    {
+        text[0] = '0' + number;
+        text[1] = '\0';
+    }
+
+    constexpr int glyphH = 8;
+
+    const int textW = GetTextWidth(text);
+    const int drawX = cellX + (CAL_CELL_W - textW) / 2;
+    const int drawY = cellY + (CAL_CELL_H - glyphH) / 2;
+
+    DrawText(drawX, drawY, text, color, this);
+}
+
+int DsBiosSubBackground::DaysInMonth(int y, int m)
+{
+    static const int days[] =
+        { 31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31 };
+    if (m == 2 && (y % 4 == 0 && (y % 100 != 0 || y % 400 == 0)))
+        return 29;
+    return days[m - 1];
+}
+
+void DsBiosSubBackground::DrawCalendar(int year, int month, int today)
+{
+    constexpr int CAL_ROWS = 5;
+
+    struct tm firstDay = _tm;
+    firstDay.tm_mday = 1;
+    mktime(&firstDay);
+
+    const int startDow = firstDay.tm_wday; // 0 = Sun
+    const int numDays  = DaysInMonth(year, month);
+
+    for (int d = 1; d <= numDays; d++)
+    {
+        const int index = startDow + d - 1;
+
+        const int col = index % 7;
+        int row = index / 7;
+
+        // Wrap 6th calendar row back to the first row.
+        if (row >= CAL_ROWS)
+            row = 0;
+
+        const int px = CAL_ORIGIN_X + col * CAL_CELL_W;
+        const int py = CAL_ORIGIN_Y + row * CAL_CELL_H;
+
+        if (d == today)
+        {
+            constexpr int boxSize = 13;
+
+            const int boxX = px + (CAL_CELL_W - boxSize) / 2;
+            const int boxY = py + (CAL_CELL_H - boxSize) / 2;
+
+            DrawBox(boxX, boxY, boxSize, boxSize,
+                    _palette.user.dark,
+                    _palette.user.light2,
+                    _palette.user.light6);
+        }
+
+        const u16 color =
+            (d == today) ? _palette.black    :
+            (col == 0)   ? _palette.sunday   :
+            (col == 6)   ? _palette.saturday :
+                           _palette.black;
+
+        DrawCalendarNumber(px, py, d, color);
+
+    }
+    DrawCalendarHeader(month, year);
 }
