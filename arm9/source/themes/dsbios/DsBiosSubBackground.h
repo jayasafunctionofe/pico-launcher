@@ -76,5 +76,7 @@ private:
     void DrawTopBar();
     void DrawTopBarBackground();
     void DrawTopBarDividers();
+    void DrawTopBarUserName(const std::string& userName);
+
 
 };

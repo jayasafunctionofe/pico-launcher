@@ -38,14 +38,6 @@ void DsBiosSubBackground::RestoreBgRegion(int x, int y, int w, int h)
     }
 }
 
-void DsBiosSubBackground::DrawBmpPixel(int px, int py, u16 color)
-{
-    if (px < 0 || px >= 256 || py < 0 || py >= 192)
-        return;
-    BmpVram()[py * 256 + px] = color;
-}
-
-
 // ########## VBLANK ##########
 void DsBiosSubBackground::VBlank()
 {
@@ -112,6 +104,118 @@ void DsBiosSubBackground::Draw(GraphicsContext& graphicsContext)
 
 
 
+// ########## Draw Methods ########## //
+
+void DsBiosSubBackground::DrawBmpPixel(int px, int py, u16 color)
+{
+    if (px < 0 || px >= 256 || py < 0 || py >= 192)
+        return;
+    BmpVram()[py * 256 + px] = color;
+}
+
+static int GetTextWidth(const char* text)
+{
+    int width = 0;
+
+    while (*text)
+    {
+        const Glyph* glyph = GetGlyph(*text);
+        width += glyph->width;
+
+        text++;
+
+        if (*text)
+            width += 1; // 1px gap between chars
+    }
+
+    return width;
+}
+
+static void DrawChar(
+    int originX, int originY, char ch,
+    u16 color, DsBiosSubBackground* self)
+{
+    const Glyph* glyph = GetGlyph(ch);
+
+    for (int row = 0; row < 8; row++)
+    {
+        const u8 bits = glyph->rows[row];
+
+        for (int col = 0; col < glyph->width; col++)
+        {
+            if (bits & (0x80 >> col))
+            {
+                self->DrawBmpPixel(
+                    originX + col,
+                    originY + row,
+                    color);
+            }
+        }
+    }
+}
+
+static void DrawCharBig(
+    int originX, int originY, char ch,
+    u16 color, DsBiosSubBackground* self)
+{
+    const GlyphBig* glyph = GetGlyphBig(ch);
+
+    for (int row = 0; row < 12; row++)
+    {
+        const u8 bits = glyph->rows[row];
+
+        for (int col = 0; col < glyph->width; col++)
+        {
+            if (bits & (0x80 >> col))
+            {
+                self->DrawBmpPixel(
+                    originX + col,
+                    originY + row,
+                    color);
+            }
+        }
+    }
+}
+
+static void DrawText(
+    int x, int y, const char* text,
+    u16 color, DsBiosSubBackground* self)
+{
+    int cursorX = x;
+
+    while (*text)
+    {
+        const Glyph* glyph = GetGlyph(*text);
+
+        DrawChar(cursorX, y, *text, color, self);
+
+        cursorX += glyph->width;
+        text++;
+
+        if (*text)
+            cursorX += 1; // 1px gap
+    }
+}
+
+static void DrawTextBig(
+    int x, int y, const char* text,
+    u16 color, DsBiosSubBackground* self)
+{
+    int cursorX = x;
+
+    while (*text)
+    {
+        const GlyphBig* glyph = GetGlyphBig(*text);
+
+        DrawCharBig(cursorX, y, *text, color, self);
+
+        cursorX += glyph->width;
+        text++;
+
+        if (*text)
+            cursorX += 4; // 4px gap
+    }
+}
 
 // ########## TOP  BAR ##########
 
@@ -119,6 +223,7 @@ void DsBiosSubBackground::DrawTopBar()
 {
     DrawTopBarBackground();
     DrawTopBarDividers();
+    DrawTopBarUserName(_systemSettings.userName);
 }
 
 
@@ -169,3 +274,12 @@ void DsBiosSubBackground::DrawTopBarDividers()
     }
 }
 
+void DsBiosSubBackground::DrawTopBarUserName(const std::string& userName)
+{
+    constexpr int x = TB_USER_X_POS;
+    constexpr int y = TB_TEXT_Y_POS;
+
+    u16 color = _palette.white;
+
+    DrawText(x, y, userName.c_str(), color, this);
+}
