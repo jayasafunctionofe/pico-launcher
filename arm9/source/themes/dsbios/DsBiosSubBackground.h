@@ -29,6 +29,7 @@ private:
 ;
     const IFontRepository* _fontRepository;
 
+    DsBiosSystemInfo::Settings _systemSettings;
     bool _hasCustomSystemColor;
     Rgb8 _customSystemColor;
 

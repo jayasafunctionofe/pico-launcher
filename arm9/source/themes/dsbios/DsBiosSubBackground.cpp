@@ -29,4 +29,22 @@ void DsBiosSubBackground::LoadResources(const ITheme& theme, const VramContext& 
         memcpy((u8*)BG_GFX_SUB + 0x8000, tmpBuf.get(), 256 * 192 * 2);
         file->Close();
     }
+    
+    DC_FlushRange(_bgBuffer.get(), 256 * 192 * sizeof(u16));
+    dmaCopyWords(3, _bgBuffer.get(), (void*)BmpVram(), 256 * 192 * sizeof(u16));
+
+    DsBiosSystemInfo systemInfo;
+    _systemSettings = systemInfo.ReadSettings();
+
+    const u8 themeId = _systemSettings.themeId & 0x0F;
+    if (_hasCustomSystemColor)
+    {
+        _palette = MakeUiPalette(BaseToUserPalette(_customSystemColor));
+    }
+    else
+    {
+        _palette = MakeUiPalette(THEME_USER_PALETTES[themeId]);
+    }
+
+    DrawTopBar();
 }
